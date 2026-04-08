@@ -1,0 +1,93 @@
+# cloudbuild.yaml
+# CI/CD pipeline for policy-sop-assistant
+# Triggered on push to main branch.
+#
+# Steps:
+#   1. Run unit tests
+#   2. Build & push Cloud Run container
+#   3. Deploy Cloud Run service
+#   4. Deploy Cloud Function (ingestion)
+
+substitutions:
+  _REGION: us-central1
+  _SERVICE_NAME: policy-sop-api
+  _FUNCTION_NAME: policy-doc-ingestor
+  _DATA_STORE_ID: policy-docs
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+steps:
+  # ------------------------------------------------------------------
+  # 1. Install dependencies & run tests
+  # ------------------------------------------------------------------
+  - name: python:3.11-slim
+    id: test
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        pip install --quiet -r requirements.txt pytest
+        python -m pytest tests/ -v --tb=short
+
+  # ------------------------------------------------------------------
+  # 2. Build container image
+  # ------------------------------------------------------------------
+  - name: gcr.io/cloud-builders/docker
+    id: build
+    args:
+      - build
+      - -t
+      - gcr.io/$PROJECT_ID/${_SERVICE_NAME}:$SHORT_SHA
+      - .
+    waitFor: [test]
+
+  # ------------------------------------------------------------------
+  # 3. Push container image
+  # ------------------------------------------------------------------
+  - name: gcr.io/cloud-builders/docker
+    id: push
+    args:
+      - push
+      - gcr.io/$PROJECT_ID/${_SERVICE_NAME}:$SHORT_SHA
+    waitFor: [build]
+
+  # ------------------------------------------------------------------
+  # 4. Deploy Cloud Run
+  # ------------------------------------------------------------------
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: deploy-cloudrun
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE_NAME}
+      - --image=gcr.io/$PROJECT_ID/${_SERVICE_NAME}:$SHORT_SHA
+      - --region=${_REGION}
+      - --platform=managed
+      - --no-allow-unauthenticated
+      - --set-env-vars=PROJECT_ID=$PROJECT_ID,DATA_STORE_ID=${_DATA_STORE_ID}
+    waitFor: [push]
+
+  # ------------------------------------------------------------------
+  # 5. Deploy Cloud Function (ingestion trigger)
+  # ------------------------------------------------------------------
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: deploy-function
+    entrypoint: gcloud
+    args:
+      - functions
+      - deploy
+      - ${_FUNCTION_NAME}
+      - --gen2
+      - --runtime=python311
+      - --region=${_REGION}
+      - --entry-point=on_gcs_event
+      - --source=ingestion
+      - --trigger-event-filters=type=google.cloud.storage.object.v1.finalized
+      - --set-env-vars=PROJECT_ID=$PROJECT_ID,DATA_STORE_ID=${_DATA_STORE_ID}
+    waitFor: [test]
+
+images:
+  - gcr.io/$PROJECT_ID/${_SERVICE_NAME}:$SHORT_SHA
+
