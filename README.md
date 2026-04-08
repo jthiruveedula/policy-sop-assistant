@@ -1,27 +1,26 @@
-# policy-sop-assistant
+# 🛡️ Policy / SOP Assistant
 
-> GCS-triggered ingestion of wiki/Confluence exports into Vertex AI Search, with Gemini Flash citation-first Q&A that always returns `[source: section_id | doc_url]` references.
+> A governed enterprise policy copilot that ingests SOPs, runbooks, and wiki exports, then returns grounded answers with mandatory source citations and operational traceability.
 
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
-[![GCP](https://img.shields.io/badge/GCP-Vertex%20AI%20Search%20%7C%20GCS%20%7C%20Eventarc-orange)](https://cloud.google.com/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-
----
-
-## Overview
-
-`policy-sop-assistant` is an enterprise knowledge assistant designed for compliance, HR, and operations teams. It ingests policies, SOPs, runbooks, and wiki exports stored in GCS, indexes them in Vertex AI Search (with native grounding), and answers employee questions with **mandatory citations** that include the section ID and a deep link back to the source document.
-
-Key capabilities:
-- **Event-driven ingestion**: GCS Object Notifications trigger Eventarc -> Cloud Function -> Vertex AI Search import for any new or updated document.
-- **Multi-format parsing**: PDF, DOCX, Markdown, and HTML wiki exports all parsed and section-identified before indexing.
-- **Vertex AI Search grounding**: Uses Vertex AI Search's built-in grounding to retrieve relevant passages and generate answers with source metadata.
-- **Citation enforcement**: Every answer includes structured citations: `[source: <section_id> | <doc_url>]`. Answers without citations are rejected.
-- **Governance-ready**: All source documents are versioned in GCS; audit log via Cloud Audit Logs.
+[![Build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/jthiruveedula/policy-sop-assistant/actions)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
+[![GCP](https://img.shields.io/badge/GCP-Cloud%20Run%20%7C%20Eventarc%20%7C%20GCS-4285F4)](https://cloud.google.com/)
+[![Vertex AI Search](https://img.shields.io/badge/search-Vertex%20AI%20Search-1A73E8)](https://cloud.google.com/vertex-ai-search)
+[![Gemini](https://img.shields.io/badge/model-Gemini%202.0%20Flash-8E75FF)](https://cloud.google.com/vertex-ai)
+[![Citations](https://img.shields.io/badge/citations-enforced-orange)](https://github.com/jthiruveedula/policy-sop-assistant)
+[![Governance](https://img.shields.io/badge/governance-ready-green)](https://github.com/jthiruveedula/policy-sop-assistant)
+[![License](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
 
 ---
 
-## Architecture
+## 🛡️ Why Trust This Assistant
+
+Policy and SOP information is high-stakes. A wrong answer can cause compliance failures, operational incidents, or legal risk.  
+`policy-sop-assistant` is built trust-first: every answer **must** include `[source: <section_id> | <doc_url>]` citations or it is rejected. Documents are GCS-versioned, ingestion is event-driven, and all queries are audit-logged via Cloud Audit Logs.
+
+---
+
+## 🏗️ Architecture
 
 ```
 Confluence / Wiki Export
@@ -31,134 +30,155 @@ Confluence / Wiki Export
        |  (Object Finalize notification)
        v
   Eventarc -> Cloud Function
-       |  (gcs_trigger_handler.py)
+       |  (parse + section-chunk + metadata tag)
        v
-  Document Parser
-  +--------------------------------+
-  | PDF | DOCX | MD | HTML parsers |
-  | Section-aware chunker          |
-  | Metadata extractor             |
-  +--------------------------------+
+  Vertex AI Search  (native grounding + citation passthrough)
        |
        v
-  Vertex AI Search
-  (Data Store + Search App)
-       |
-       v
-  Cloud Run - FastAPI /ask
-       |  (search_client.py + citation_formatter.py)
-       v
-  Gemini 2.0 Flash
-  (grounded answer with [source] citations)
-       |
-       v
-  Streamlit UI (citation display)
+  Cloud Run  -  FastAPI /ask
+       |           |
+  Streamlit UI   Gemini 2.0 Flash
+  (citation panel)   (citation-enforced generation)
 ```
 
 ---
 
-## Data Sources & Ingestion
+## 🔌 API Contract
 
-| Source Format | Parser | Section ID Strategy |
+Every `/ask` response returns this structured schema:
+
+```json
+{
+  "answer": "string",
+  "citations": [
+    {
+      "section_id": "string",
+      "doc_url": "string",
+      "snippet": "string",
+      "modified_at": "ISO8601"
+    }
+  ],
+  "source_count": 3,
+  "latest_source_ts": "ISO8601",
+  "confidence_label": "high | medium | low",
+  "refusal_reason": null
+}
+```
+
+Answers without at least one valid citation are **rejected at the QA layer** (`qa/citation_enforcer.py`).
+
+---
+
+## 📥 Ingestion Flow
+
+| Step | Component | Detail |
 |---|---|---|
-| PDF | PyMuPDF + pdfplumber | Page number + heading |
-| DOCX | python-docx | Heading hierarchy |
-| Markdown | mistune | H2/H3 anchors |
-| HTML (wiki export) | BeautifulSoup | `id` attributes on headings |
-
-Trigger flow:
-1. File uploaded to `gs://my-docs-bucket/docs/`
-2. GCS notifies Eventarc
-3. Eventarc triggers Cloud Function `ingestion/gcs_trigger_handler.py`
-4. Handler parses, extracts sections+metadata, and calls Vertex AI Search import API
-5. Document available for search within ~60 seconds
+| 1. Upload | GCS bucket (`docs/`) | Confluence export, PDF, DOCX, Markdown |
+| 2. Trigger | Eventarc Object Finalize | Auto-fires on new/updated file |
+| 3. Parse | `ingestion/parser.py` | Multi-format, section-aware chunking |
+| 4. Index | Vertex AI Search import | Native grounding with source metadata |
+| 5. Diff | `ingestion/diff_detector.py` | 🆕 Section-level change detection on update |
 
 ---
 
-## RAG / Search Layer
+## 📁 Repo Structure
 
-- **Search engine**: Vertex AI Search (Enterprise edition for grounding).
-- **Retrieval mode**: `EXTRACTIVE_ANSWER` + `EXTRACTIVE_SEGMENTS` for passage-level results.
-- **Grounding metadata**: Each result includes `document_metadata.uri` (GCS path), `document_metadata.title`, and `page_content` with `page_anchor` (section ID).
-- **Citation assembly**: `api/citation_formatter.py` converts Vertex AI Search grounding metadata into structured `[source]` tags.
+```
+policy-sop-assistant/
+├── api/                    # FastAPI /ask service (Cloud Run)
+│   ├── main.py
+│   ├── models.py           # 🆕 Structured response schema (citations, confidence)
+│   ├── search_client.py
+│   └── authz.py            # 🆕 Access-aware retrieval (IAM / ACL filter)
+├── ingestion/              # GCS-triggered document ingestion
+│   ├── parser.py
+│   ├── section_chunker.py
+│   ├── diff_detector.py    # 🆕 Section-level policy diff on update
+│   └── telemetry.py        # 🆕 Parse success rate, chunk counts, error categories
+├── qa/                     # Citation enforcement & evaluation
+│   ├── citation_enforcer.py
+│   ├── eval_runner.py      # 🆕 Groundedness + citation validity scoring
+│   └── golden_questions.yaml  # 🆕 Curated eval question set
+├── terraform/              # GCS, Eventarc, Cloud Run, IAM, Vertex AI Search
+├── ui/                     # Streamlit chat UI with citation panel
+├── cloudbuild.yaml
+└── requirements.txt
+```
 
 ---
 
-## LLM Usage
+## 🚀 Quickstart
+
+```bash
+# Local dev
+pip install -r requirements.txt
+export PROJECT_ID=your-project
+uvicorn api.main:app --reload
+
+# GCP deploy
+cd terraform && terraform init && terraform apply
+gcloud run deploy policy-sop-api --source api/ --region=us-central1
+
+# Run evaluation suite
+python qa/eval_runner.py --questions qa/golden_questions.yaml
+```
+
+---
+
+## 💬 Example Policy Questions
+
+```
+"What is the process for requesting access to a production database?"
+"What are our data retention obligations for EU customer records?"
+"Who approves exceptions to the change management SOP?"
+"Has the incident response policy changed in the last 30 days?"
+```
+
+---
+
+## 📊 LLM Usage
 
 | Parameter | Value |
 |---|---|
 | Model | `gemini-2.0-flash-001` |
-| Max input tokens | 4 000 (search results + question) |
-| Max output tokens | 1 024 |
-| Temperature | 0.1 (compliance-safe, deterministic) |
-| Citation requirement | Hard: prompt instructs model to refuse if no source found |
-| Grounding source | Vertex AI Search extractive answers |
-
-**Citation format enforced in system prompt:**
-```
-You MUST cite every factual claim using the format: [source: <section_id> | <doc_url>]
-If you cannot find a relevant section, say: "I could not find this in the knowledge base."
-Do NOT fabricate citations.
-```
+| Grounding | Vertex AI Search (native) |
+| Citation format | `[source: <section_id> \| <doc_url>]` |
+| Refusal | Answer rejected if 0 valid citations |
+| Audit log | Cloud Audit Logs (all queries) |
 
 ---
 
-## Deployment
+## 🔭 Operations / Observability
 
-### Local Dev
-```bash
-docker-compose up
-# Upload a sample doc to trigger ingestion:
-python -c "from ingestion.gcs_trigger_handler import process_local_file; process_local_file('sample_docs/sample_policy.pdf')"
-# Ask a question:
-curl -X POST http://localhost:8080/ask -d '{"question": "What is the remote work policy?"}'
-```
-
-### GCP Deployment
-```bash
-# 1. Provision infra (GCS bucket, Eventarc, Vertex AI Search data store, Cloud Run)
-cd infra && terraform apply -var-file=environments/dev.tfvars
-
-# 2. Batch index existing docs
-python indexer/build_corpus.py --project=$PROJECT --gcs_bucket=$BUCKET
-
-# 3. Deploy Cloud Function (GCS trigger)
-gcloud functions deploy policy-doc-ingestor \
-  --gen2 --runtime=python311 \
-  --trigger-event-filters="type=google.cloud.storage.object.v1.finalized" \
-  --trigger-event-filters="bucket=$BUCKET"
-
-# 4. Deploy API
-gcloud run deploy policy-api --source api/ --region=us-central1
-```
+- **Ingestion telemetry**: `ingestion/telemetry.py` — parse success rate, skipped sections, error categories
+- **Evaluation harness**: `qa/eval_runner.py` — citation validity, groundedness, refusal correctness
+- **Admin dashboard**: `/admin/ingestion-status` endpoint (planned) — pipeline health at a glance
+- **Policy diff alerts**: `ingestion/diff_detector.py` — section-level change summary on every document update
 
 ---
 
-## Repo Structure
+## 🛣️ Roadmap
 
-```
-policy-sop-assistant/
-|-- infra/                  # Terraform: GCS, Eventarc, Vertex AI Search, Cloud Run, IAM
-|-- ingestion/              # GCS-triggered Cloud Function
-|   |-- gcs_trigger_handler.py
-|   `-- parsers/            # PDF, DOCX, MD, HTML parsers
-|-- indexer/                # Batch corpus builder
-|   `-- build_corpus.py
-|-- api/                    # FastAPI /ask with citation response
-|   |-- main.py
-|   |-- search_client.py
-|   `-- citation_formatter.py
-|-- ui/                     # Streamlit UI with citation display
-|-- sample_docs/            # Sample policy/SOP docs for testing
-|-- tests/
-`-- docs/
-```
+### Now / Next
+- [ ] **Access-Aware Retrieval** — IAM / ACL-based document visibility filter at query time
+- [ ] **Policy Diff Pipeline** — section-level diff + change summary on every document update
+- [ ] **Evaluation Suite** — golden questions for groundedness, citation validity, refusal correctness
+- [ ] **Ingestion Observability** — parse failure console + admin API endpoint
+- [ ] **Structured Response Schema** — citations, confidence label, refusal reason in every response
+
+### Future / Wow
+- [ ] **Procedure Navigator** — step-by-step SOP flows with branching logic and completion tracking
+- [ ] **Policy Impact Agent** — on policy change, identify affected teams, SOPs, and training needs
+- [ ] **Multilingual Grounded Answers** — ingest once, answer in user's language with source traceability
+- [ ] **Exception Triage Agent** — route ambiguous questions to human owners with cited context
+- [ ] **Compliance Analytics Layer** — unanswered questions, confusing sections, top policy pain points
 
 ---
 
-## Roadmap
+## 🤝 Contributing
 
-1. **Access-control integration** - integrate with Google Workspace groups; only return docs the user has GCS read access to.
-2. **Multi-language support** - translate non-English docs before indexing; respond in user's language.
-3. **Policy diff alerts** - detect when a document changes significantly vs previous version; email affected stakeholders.
+PRs welcome. Run `make lint test` before opening a PR.
+
+## 📄 License
+
+MIT — see [LICENSE](LICENSE)
