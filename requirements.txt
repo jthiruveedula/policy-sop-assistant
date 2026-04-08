@@ -1,0 +1,29 @@
+# policy-sop-assistant requirements
+# Pin major versions; use pip-compile for reproducible lockfile
+
+# Cloud Functions framework
+functions-framework==3.*
+
+# GCP clients
+google-cloud-storage==2.*
+google-cloud-discoveryengine==0.11.*
+google-cloud-logging==3.*
+
+# Vertex AI / Gemini
+google-cloud-aiplatform==1.*
+
+# FastAPI (Cloud Run API)
+fastapi==0.111.*
+uvicorn[standard]==0.29.*
+pydantic==2.*
+
+# Document parsers
+pymupdf==1.*           # PDF  -> fitz
+python-docx==1.*       # DOCX
+beautifulsoup4==4.*    # HTML
+lxml==5.*              # HTML parser backend
+
+# Utilities
+python-dotenv==1.*
+tenacity==8.*
+
