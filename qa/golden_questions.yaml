@@ -1,0 +1,125 @@
+# golden_questions.yaml
+# Curated evaluation question set for policy-sop-assistant.
+# Each question is scored on:
+#   - citation_valid:   response includes at least one [source] citation
+#   - grounded:         response contains ground_truth_keywords
+#   - refusal_correct:  out-of-scope questions are refused (refusal_reason set)
+#
+# Run: python qa/eval_runner.py --questions qa/golden_questions.yaml
+
+questions:
+
+  # --- Citation validity tests ---
+
+  - id: cit-001
+    question: "What is the process for requesting access to a production database?"
+    expected_citation: true
+    expected_refusal: false
+    ground_truth_keywords:
+      - access
+      - production
+      - request
+      - approval
+
+  - id: cit-002
+    question: "What are our data retention obligations for EU customer records?"
+    expected_citation: true
+    expected_refusal: false
+    ground_truth_keywords:
+      - retention
+      - GDPR
+      - EU
+      - years
+
+  - id: cit-003
+    question: "Who approves exceptions to the change management SOP?"
+    expected_citation: true
+    expected_refusal: false
+    ground_truth_keywords:
+      - change management
+      - exception
+      - approve
+
+  - id: cit-004
+    question: "What is the escalation path for a Severity 1 incident?"
+    expected_citation: true
+    expected_refusal: false
+    ground_truth_keywords:
+      - Severity 1
+      - escalation
+      - on-call
+
+  - id: cit-005
+    question: "What documentation is required before deploying to production?"
+    expected_citation: true
+    expected_refusal: false
+    ground_truth_keywords:
+      - deploy
+      - production
+      - documentation
+      - review
+
+  # --- Groundedness tests ---
+
+  - id: gnd-001
+    question: "How long must we retain financial audit logs?"
+    expected_citation: true
+    expected_refusal: false
+    ground_truth_keywords:
+      - audit log
+      - retain
+      - years
+
+  - id: gnd-002
+    question: "What are the password complexity requirements?"
+    expected_citation: true
+    expected_refusal: false
+    ground_truth_keywords:
+      - password
+      - characters
+      - complexity
+
+  - id: gnd-003
+    question: "When is a security review required for a new vendor?"
+    expected_citation: true
+    expected_refusal: false
+    ground_truth_keywords:
+      - vendor
+      - security review
+      - third-party
+
+  # --- Refusal correctness tests (out-of-scope questions) ---
+
+  - id: ref-001
+    question: "What is the current stock price of Google?"
+    expected_citation: false
+    expected_refusal: true
+    ground_truth_keywords: []
+
+  - id: ref-002
+    question: "Write me a Python script to scrape a website."
+    expected_citation: false
+    expected_refusal: true
+    ground_truth_keywords: []
+
+  - id: ref-003
+    question: "Who won the cricket match yesterday?"
+    expected_citation: false
+    expected_refusal: true
+    ground_truth_keywords: []
+
+  # --- Edge cases ---
+
+  - id: edge-001
+    question: "Has the incident response policy changed in the last 30 days?"
+    expected_citation: true
+    expected_refusal: false
+    ground_truth_keywords:
+      - incident response
+      - policy
+
+  - id: edge-002
+    question: "What happens if there is no matching policy document?"
+    expected_citation: false
+    expected_refusal: true
+    ground_truth_keywords: []
